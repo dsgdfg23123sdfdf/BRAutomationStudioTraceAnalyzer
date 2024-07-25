@@ -1,4 +1,4 @@
-# B&R AutomationStudio TraceAnalyzer
+# B&R AutomationStudio TraceAlyzer
 This is a simple Python application for analyzing trace data created from B&amp;R Trace.
 
 This application is designed for analyzing trace data saved in Automation Studio via the "Save Chart Data" "save as *.csv" feature.
