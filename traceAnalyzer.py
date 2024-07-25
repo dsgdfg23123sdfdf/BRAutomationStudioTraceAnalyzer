@@ -51,10 +51,16 @@ def read_target_data(filepath):
         if line.startswith('%'):
             header_lines.append(line)
             if 'TARGET_DATA' in line:
-                parts = line.split('TARGET_DATA')
-                if len(parts) > 1:
-                    var_name = parts[1].split(',')[0].strip()
+                # Finden des Starts von 'TARGET_DATA' und 'UnitX'
+                target_data_index = line.find('TARGET_DATA') + len('TARGET_DATA')
+                unitx_index = line.find('XUNIT', target_data_index)
+                if target_data_index != -1 and unitx_index != -1:
+                    # Extrahieren des Textes zwischen 'TARGET_DATA' und 'UnitX'
+                    var_name = line[target_data_index:unitx_index].strip()
+                    # Entfernen von zusätzlichen Leerzeichen und anderen unnötigen Zeichen
+                    var_name = ' '.join(var_name.split())
                     variable_names.append(var_name)
+                    print("Debug: Extracted variable name:", var_name)  # Debug-Ausgabe
         elif line:
             data_lines.append(line)
             reading_data = True
@@ -87,28 +93,67 @@ def export_data(combined_data, start, end, filepath, header_lines):
 def plot_data(time_data, value_data, variable_names, selections, scales, offsets, header_lines):
     fig, ax = plt.subplots(figsize=(10, 5))
     lines = []
+
+    # Plotting each selected data series
     for i, (selected, scale, offset) in enumerate(zip(selections, scales, offsets)):
         if selected.get():
             scaled_data = value_data.iloc[:, i] * float(scale.get()) + float(offset.get())
             line, = ax.plot(time_data.iloc[:, i], scaled_data, label=variable_names[i])
             lines.append(line)
+
     ax.set_xlabel('Time')
     ax.set_ylabel('Value')
     ax.set_title('Data Plot')
-    ax.legend()
     ax.grid(True)
-    plt.draw()
 
-    def onselect(xmin, xmax):
-        indmin, indmax = np.searchsorted(time_data.iloc[:, 0], (xmin, xmax))
-        indmax = min(len(time_data) - 1, indmax)
-        export_path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
-        if export_path:
-            export_data(pd.concat([time_data, value_data], axis=1), indmin, indmax, export_path, header_lines)
+    # Cursors initialization
+    cursor1 = ax.axvline(x=time_data.iloc[0, 0], color='r', linestyle='--')
+    cursor2 = ax.axvline(x=time_data.iloc[0, 0], color='g', linestyle='--')
+    cursor_values = {cursor1: {}, cursor2: {}}
 
-    span = SpanSelector(ax, onselect, 'horizontal', useblit=True)
+    def on_click(event):
+        if event.inaxes != ax:
+            return  # Ignore clicks outside the axes
 
+        if event.button == 1 and event.key == 'control':  # Check if the Control key is pressed
+            cursor1.set_xdata([event.xdata])
+            update_cursor_values(cursor1, lines, ax, cursor_values)
+
+
+        elif event.button == 3:  # Right mouse button for Cursor 2
+            cursor2.set_xdata([event.xdata])
+            update_cursor_values(cursor2, lines, ax, cursor_values)
+
+
+        update_time_difference(cursor1, cursor2, ax)
+        update_legend(lines, ax, cursor_values, cursor1, cursor2, variable_names)
+        fig.canvas.draw()
+
+    fig.canvas.mpl_connect('button_press_event', on_click)
     plt.show()
+
+def update_cursor_values(cursor, lines, ax, cursor_values):
+    x_pos = cursor.get_xdata()[0]
+    for i, line in enumerate(lines):
+        x_data = line.get_xdata()
+        y_data = line.get_ydata()
+        nearest_index = np.searchsorted(x_data, x_pos)
+        nearest_index = min(max(nearest_index, 0), len(x_data) - 1)
+        y_value = y_data[nearest_index]
+        cursor_values[cursor][i] = f'{y_value:.2f}'
+
+def update_legend(lines, ax, cursor_values, cursor1, cursor2, variable_names):
+    for i, line in enumerate(lines):
+        value1 = cursor_values[cursor1].get(i, 'N/A')
+        value2 = cursor_values[cursor2].get(i, 'N/A')
+        line.set_label(f'{variable_names[i]}: {value1} | {value2}')
+    ax.legend()
+
+def update_time_difference(cursor1, cursor2, ax):
+    x1 = cursor1.get_xdata()[0]
+    x2 = cursor2.get_xdata()[0]
+    time_diff = abs(x2 - x1)
+    ax.set_title(f'Data Plot - Time difference: {time_diff:.2f} seconds')
 
 def gui():
     root = Tk()
