@@ -4,7 +4,7 @@ import sys
 def install(package):
     subprocess.check_call([sys.executable, "-m", "pip", "install", package])
 
-# Versuche, die benötigten Pakete zu importieren, und installiere sie, falls sie fehlen
+# Install the specified Python package using pip.
 try:
     import pandas as pd
 except ImportError:
@@ -51,16 +51,13 @@ def read_target_data(filepath):
         if line.startswith('%'):
             header_lines.append(line)
             if 'TARGET_DATA' in line:
-                # Finden des Starts von 'TARGET_DATA' und 'UnitX'
                 target_data_index = line.find('TARGET_DATA') + len('TARGET_DATA')
                 unitx_index = line.find('XUNIT', target_data_index)
                 if target_data_index != -1 and unitx_index != -1:
-                    # Extrahieren des Textes zwischen 'TARGET_DATA' und 'UnitX'
                     var_name = line[target_data_index:unitx_index].strip()
-                    # Entfernen von zusätzlichen Leerzeichen und anderen unnötigen Zeichen
                     var_name = ' '.join(var_name.split())
                     variable_names.append(var_name)
-                    print("Debug: Extracted variable name:", var_name)  # Debug-Ausgabe
+                    print("Debug: Extracted variable name:", var_name)
         elif line:
             data_lines.append(line)
             reading_data = True
@@ -90,18 +87,23 @@ def export_data(combined_data, start, end, filepath, header_lines):
                 line += f"{row[time_col]},{row[value_col]},"
             file.write(line.rstrip(',') + '\n')
 
-def plot_data(time_data, value_data, variable_names, selections, scales, offsets, header_lines):
-    fig, ax = plt.subplots(figsize=(10, 5))
-    lines = []
-    selected_variable_names = []  # Liste für die Namen der ausgewählten Variablen
+def plot_data(time_data, value_data, variable_names, selections, scales, offsets, header_lines, fig, ax, initial=False):
+    print("Debug: Plotting data...")
+    if not initial:
+        current_xlim = ax.get_xlim()
+        current_ylim = ax.get_ylim()
 
-    # Plotting each selected data series
+    ax.clear()
+
+    lines = []
     for i, (selected, scale, offset) in enumerate(zip(selections, scales, offsets)):
         if selected.get():
+            print(f"Debug: Plotting variable {variable_names[i]}")
             scaled_data = value_data.iloc[:, i] * float(scale.get()) + float(offset.get())
             line, = ax.plot(time_data.iloc[:, i], scaled_data, label=variable_names[i])
             lines.append(line)
-            selected_variable_names.append(variable_names[i])
+        else:
+            print(f"Debug: Skipping variable {variable_names[i]}")
 
     ax.set_xlabel('Time')
     ax.set_ylabel('Value')
@@ -109,8 +111,17 @@ def plot_data(time_data, value_data, variable_names, selections, scales, offsets
     ax.legend()
     ax.grid(True)
 
+    if initial:
+        ax.set_xlim(time_data.min().min(), time_data.max().max())
+        ax.set_ylim(value_data.min().min(), value_data.max().max())
+    else:
+        ax.set_xlim(current_xlim)
+        ax.set_ylim(current_ylim)
 
+    fig.canvas.draw()
 
+    if not lines:
+        print("Debug: No lines to plot.")  # Debug-Ausgabe
 
     # Cursors initialization
     cursor1 = ax.axvline(x=time_data.iloc[0, 0], color='r', linestyle='--')
@@ -125,14 +136,12 @@ def plot_data(time_data, value_data, variable_names, selections, scales, offsets
             cursor1.set_xdata([event.xdata])
             update_cursor_values(cursor1, lines, ax, cursor_values)
 
-
         elif event.button == 3:  # Right mouse button for Cursor 2
             cursor2.set_xdata([event.xdata])
             update_cursor_values(cursor2, lines, ax, cursor_values)
 
-
         update_time_difference(cursor1, cursor2, ax)
-        update_legend(lines, ax, cursor_values, cursor1, cursor2, selected_variable_names)
+        update_legend(lines, ax, cursor_values, cursor1, cursor2, variable_names, selections)  # Corrected line
         fig.canvas.draw()
 
     fig.canvas.mpl_connect('button_press_event', on_click)
@@ -148,12 +157,19 @@ def update_cursor_values(cursor, lines, ax, cursor_values):
         y_value = y_data[nearest_index]
         cursor_values[cursor][i] = f'{y_value:.2f}'
 
-def update_legend(lines, ax, cursor_values, cursor1, cursor2, selected_variable_names):
+def update_legend(lines, ax, cursor_values, cursor1, cursor2, variable_names, selections):
+    # Update the legend to display only selected variables
+    new_labels = []
     for i, line in enumerate(lines):
-        value1 = cursor_values[cursor1].get(i, 'N/A')
-        value2 = cursor_values[cursor2].get(i, 'N/A')
-        line.set_label(f'{selected_variable_names[i]}: {value1} | {value2}')
-    ax.legend()
+        if selections[i].get():  # Check if the variable is selected
+            value1 = cursor_values[cursor1].get(i, 'N/A')
+            value2 = cursor_values[cursor2].get(i, 'N/A')
+            new_label = f'{variable_names[i]}: {value1} | {value2}'
+            new_labels.append(new_label)
+        else:
+            line.set_visible(False)  # Hide lines that are not selected
+
+    ax.legend(lines, new_labels)  # Set the new legend with the updated labels
 
 def update_time_difference(cursor1, cursor2, ax):
     x1 = cursor1.get_xdata()[0]
@@ -165,53 +181,76 @@ def gui():
     root = Tk()
     root.title("Signal Analyzer")
 
-    filepath = filedialog.askopenfilename(title="Select file", filetypes=[("CSV files", "*.csv")])
-    if not filepath:
-        return
-
-    time_data, value_data, variable_names, header_lines = read_target_data(filepath)
-
     frame = Frame(root)
     frame.pack(fill='both', expand=True)
 
     scrollbar = Scrollbar(frame, orient=VERTICAL)
     scrollbar.pack(side='right', fill='y')
 
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    # Variables for storing data and GUI elements
     selections = []
     scale_entries = []
     offset_entries = []
+    variable_names = []
+    time_data = pd.DataFrame()
+    value_data = pd.DataFrame()
+    header_lines = []
 
-    for name in variable_names:
-        var_frame = Frame(frame)
-        var_frame.pack(fill='x')
+    def on_change(event=None):
+        plot_data(time_data, value_data, variable_names, selections, scale_entries, offset_entries, header_lines, fig, ax, initial=False)
 
-        selected = IntVar(value=1)
-        chk = Checkbutton(var_frame, text=name, variable=selected)
-        chk.pack(side='left')
+    def on_change_wrapper():
+        on_change()  # Calls on_change without arguments
 
-        scale_label = Label(var_frame, text="Scale:")
-        scale_label.pack(side='left')
+    def load_and_plot_data():
+        nonlocal time_data, value_data, variable_names, header_lines, selections, scale_entries, offset_entries
+        filepath = filedialog.askopenfilename(title="Select file", filetypes=[("CSV files", "*.csv")])
+        if filepath:
+            time_data, value_data, variable_names, header_lines = read_target_data(filepath)
 
-        scale_entry = Entry(var_frame, width=5)
-        scale_entry.insert(0, '1.0')
-        scale_entry.pack(side='left')
+            # Remove old GUI elements
+            for widget in frame.winfo_children():
+                widget.destroy()
 
-        offset_label = Label(var_frame, text="Offset:")
-        offset_label.pack(side='left')
+            # Re-create GUI elements for the variables
+            selections = []
+            scale_entries = []
+            offset_entries = []
+            for name in variable_names:
+                var_frame = Frame(frame)
+                var_frame.pack(fill='x')
 
-        offset_entry = Entry(var_frame, width=5)
-        offset_entry.insert(0, '0.0')
-        offset_entry.pack(side='left')
+                selected = IntVar(value=1)
+                chk = Checkbutton(var_frame, text=name, variable=selected, command=on_change_wrapper)
+                chk.pack(side='left')
 
-        selections.append(selected)
-        scale_entries.append(scale_entry)
-        offset_entries.append(offset_entry)
+                scale_label = Label(var_frame, text="Scale:")
+                scale_label.pack(side='left')
 
-    def on_show():
-        plot_data(time_data, value_data, variable_names, selections, scale_entries, offset_entries, header_lines)
+                scale_entry = Entry(var_frame, width=5)
+                scale_entry.insert(0, '1.0')
+                scale_entry.pack(side='left')
+                scale_entry.bind('<Return>', on_change)
 
-    show_button = Button(root, text="Anzeigen", command=on_show)
-    show_button.pack()
+                offset_label = Label(var_frame, text="Offset:")
+                offset_label.pack(side='left')
+
+                offset_entry = Entry(var_frame, width=5)
+                offset_entry.insert(0, '0.0')
+                offset_entry.pack(side='left')
+                offset_entry.bind('<Return>', on_change)
+
+                selections.append(selected)
+                scale_entries.append(scale_entry)
+                offset_entries.append(offset_entry)
+
+            plot_data(time_data, value_data, variable_names, selections, scale_entries, offset_entries, header_lines, fig, ax, initial=True)
+
+    # Button to load a new file
+    load_button = Button(root, text="Load Data", command=load_and_plot_data)
+    load_button.pack()
 
     root.mainloop()
 
