@@ -23,13 +23,38 @@ except ImportError:
     install('matplotlib')
     import matplotlib.pyplot as plt
 
+import tkinter as tk
 from tkinter import Tk, Checkbutton, Button, Entry, Label, IntVar, Frame, Scrollbar, VERTICAL, filedialog, LEFT
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+
 try:
     from matplotlib.widgets import SpanSelector
 except ImportError:
     install('matplotlib')
     from matplotlib.widgets import SpanSelector
 
+class CustomToolbar(NavigationToolbar2Tk):
+    def __init__(self, canvas, window):
+        super().__init__(canvas, window)
+        self.canvas = canvas
+        self.window = window
+        self.init_zoom_out_button()
+
+    def zoom_out(self):
+        ax = self.canvas.figure.axes[0]
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+        ax.set_xlim([xlim[0] - 0.1 * (xlim[1] - xlim[0]), xlim[1] + 0.1 * (xlim[1] - xlim[0])])
+        ax.set_ylim([ylim[0] - 0.1 * (ylim[1] - ylim[0]), ylim[1] + 0.1 * (ylim[1] - ylim[0])])
+        self.canvas.draw()
+
+    def init_zoom_out_button(self):
+        # Erstellen eines neuen Tkinter-Buttons und Hinzufügen zur Toolbar
+        zoom_out_button = tk.Button(self, text="Zoom Out", command=self.zoom_out)
+        zoom_out_button.pack(side=tk.LEFT)
+
+
+connection_id = None
 
 def read_target_data(filepath):
     with open(filepath, 'r') as file:
@@ -81,21 +106,29 @@ def export_data(combined_data, start, end, filepath, header_lines):
                 line += f"{row[time_col]},{row[value_col]},"
             file.write(line.rstrip(',') + '\n')
 
-def plot_data(time_data, value_data, variable_names, selections, scales, offsets, header_lines, fig, ax, initial=False):
+def plot_data(time_data, value_data, variable_names, selections, scales, offsets, header_lines, fig, ax,root, initial=False):
     print("Debug: Plotting data...")
-    if not initial:
-        current_xlim = ax.get_xlim()
-        current_ylim = ax.get_ylim()
+
+
+    global connection_id
+
+    current_xlim = ax.get_xlim()
+    current_ylim = ax.get_ylim()
 
     ax.clear()
 
     lines = []
+    visible_time_data = pd.DataFrame()
+    visible_value_data = pd.DataFrame()
+
     for i, (selected, scale, offset) in enumerate(zip(selections, scales, offsets)):
         if selected.get():
             print(f"Debug: Plotting variable {variable_names[i]}")
             scaled_data = value_data.iloc[:, i] * float(scale.get()) + float(offset.get())
             line, = ax.plot(time_data.iloc[:, i], scaled_data, label=variable_names[i])
             lines.append(line)
+            visible_time_data = pd.concat([visible_time_data, time_data.iloc[:, i]], axis=1)
+            visible_value_data = pd.concat([visible_value_data, scaled_data], axis=1)
         else:
             print(f"Debug: Skipping variable {variable_names[i]}")
 
@@ -105,17 +138,20 @@ def plot_data(time_data, value_data, variable_names, selections, scales, offsets
     ax.legend()
     ax.grid(True)
 
+    # Set limits based on visible data
     if initial:
-        ax.set_xlim(time_data.min().min(), time_data.max().max())
-        ax.set_ylim(value_data.min().min(), value_data.max().max())
+        if not visible_time_data.empty and not visible_value_data.empty:
+            ax.set_xlim(visible_time_data.min().min(), visible_time_data.max().max())
+            ax.set_ylim(visible_value_data.min().min(), visible_value_data.max().max())
     else:
         ax.set_xlim(current_xlim)
         ax.set_ylim(current_ylim)
 
-    fig.canvas.draw()
+    #fig.canvas.draw()
+
 
     if not lines:
-        print("Debug: No lines to plot.")  # Debug-Ausgabe
+        print("Debug: No lines to plot.")
 
     # Cursors initialization
     cursor1 = ax.axvline(x=time_data.iloc[0, 0], color='r', linestyle='--')
@@ -123,6 +159,7 @@ def plot_data(time_data, value_data, variable_names, selections, scales, offsets
     cursor_values = {cursor1: {}, cursor2: {}}
 
     def on_click(event):
+        print("-------------Debug on_click called---------------")
         if event.inaxes != ax:
             return  # Ignore clicks outside the axes
 
@@ -136,10 +173,15 @@ def plot_data(time_data, value_data, variable_names, selections, scales, offsets
 
         update_time_difference(cursor1, cursor2, ax)
         update_legend(lines, ax, cursor_values, cursor1, cursor2, variable_names, selections)  # Corrected line
+
         fig.canvas.draw()
 
-    fig.canvas.mpl_connect('button_press_event', on_click)
-    plt.show()
+    global connection_id
+    if connection_id is not None:
+        fig.canvas.mpl_disconnect(connection_id)
+    connection_id = fig.canvas.mpl_connect('button_press_event', on_click)
+
+    fig.canvas.draw()
 
 def update_cursor_values(cursor, lines, ax, cursor_values):
     x_pos = cursor.get_xdata()[0]
@@ -152,16 +194,15 @@ def update_cursor_values(cursor, lines, ax, cursor_values):
         cursor_values[cursor][i] = f'{y_value:.2f}'
 
 def update_legend(lines, ax, cursor_values, cursor1, cursor2, variable_names, selections):
+    print("-------Debug update_legened called------")
     # Update the legend to display only selected variables
     new_labels = []
+
     for i, line in enumerate(lines):
-        if selections[i].get():  # Check if the variable is selected
-            value1 = cursor_values[cursor1].get(i, 'N/A')
-            value2 = cursor_values[cursor2].get(i, 'N/A')
-            new_label = f'{variable_names[i]}: {value1} | {value2}'
-            new_labels.append(new_label)
-        else:
-            line.set_visible(False)  # Hide lines that are not selected
+        value1 = cursor_values[cursor1].get(i, 'N/A')
+        value2 = cursor_values[cursor2].get(i, 'N/A')
+        new_label = f'{line}: {value1} | {value2}'
+        new_labels.append(new_label)
 
     ax.legend(lines, new_labels)  # Set the new legend with the updated labels
 
@@ -175,24 +216,6 @@ def gui():
     root = Tk()
     root.title("Signal Analyzer - Version 1.0")
 
-    # Display version info and instructions
-    version_info = "Signal Analyzer\nVersion 1.0\n"
-    instructions = "Instructions:\n- Click 'Load Data' to select and load data files.\n- Follow on-screen prompts."
-    info_text = version_info + instructions
-    label = Label(root, text=info_text, justify=LEFT, padx=10, pady=10)
-    label.pack()
-
-    # ASCII Art or simple graphic representation
-    ascii_art = """
-    +--------------------------------+
-    |                                |
-    |      [B&R TraceAnalyzer]       |
-    |                                |
-    +--------------------------------+
-    """
-    graphic_label = Label(root, text=ascii_art, font=('Courier', 10))
-    graphic_label.pack()
-
     frame = Frame(root)
     frame.pack(fill='both', expand=True)
 
@@ -200,6 +223,13 @@ def gui():
     scrollbar.pack(side='right', fill='y')
 
     fig, ax = plt.subplots(figsize=(10, 5))
+    canvas = FigureCanvasTkAgg(fig, master=frame)
+    canvas.draw()
+    canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+    toolbar = CustomToolbar(canvas, root)
+    toolbar.update()
+    toolbar.pack(side=tk.TOP, fill=tk.X)
 
     # Variables for storing data and GUI elements
     selections = []
@@ -211,7 +241,7 @@ def gui():
     header_lines = []
 
     def on_change(event=None):
-        plot_data(time_data, value_data, variable_names, selections, scale_entries, offset_entries, header_lines, fig, ax, initial=False)
+        plot_data(time_data, value_data, variable_names, selections, scale_entries, offset_entries, header_lines, fig, ax, root, initial=False)
 
     def on_change_wrapper():
         on_change()  # Calls on_change without arguments
@@ -223,8 +253,8 @@ def gui():
             time_data, value_data, variable_names, header_lines = read_target_data(filepath)
 
             # Remove old GUI elements
-            for widget in frame.winfo_children():
-                widget.destroy()
+            #for widget in frame.winfo_children():
+                #widget.destroy()
 
             # Re-create GUI elements for the variables
             selections = []
@@ -258,7 +288,7 @@ def gui():
                 scale_entries.append(scale_entry)
                 offset_entries.append(offset_entry)
 
-            plot_data(time_data, value_data, variable_names, selections, scale_entries, offset_entries, header_lines, fig, ax, initial=True)
+            plot_data(time_data, value_data, variable_names, selections, scale_entries, offset_entries, header_lines, fig, ax, root, initial=True)
 
     # Button to load a new file
     load_button = Button(root, text="Load Data", command=load_and_plot_data)
