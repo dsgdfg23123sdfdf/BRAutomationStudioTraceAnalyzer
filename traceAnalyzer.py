@@ -23,19 +23,13 @@ except ImportError:
     install('matplotlib')
     import matplotlib.pyplot as plt
 
-from tkinter import Tk, Checkbutton, Button, Entry, Label, IntVar, Frame, Scrollbar, VERTICAL, filedialog
+from tkinter import Tk, Checkbutton, Button, Entry, Label, IntVar, Frame, Scrollbar, VERTICAL, filedialog, LEFT
 try:
     from matplotlib.widgets import SpanSelector
 except ImportError:
     install('matplotlib')
     from matplotlib.widgets import SpanSelector
 
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-from tkinter import Tk, Checkbutton, Button, Entry, Label, IntVar, Frame, Scrollbar, VERTICAL, filedialog
-from matplotlib.widgets import SpanSelector
-import sys
 
 def read_target_data(filepath):
     with open(filepath, 'r') as file:
@@ -179,7 +173,25 @@ def update_time_difference(cursor1, cursor2, ax):
 
 def gui():
     root = Tk()
-    root.title("Signal Analyzer")
+    root.title("Signal Analyzer - Version 1.0")
+
+    # Display version info and instructions
+    version_info = "Signal Analyzer\nVersion 1.0\n"
+    instructions = "Instructions:\n- Click 'Load Data' to select and load data files.\n- Follow on-screen prompts."
+    info_text = version_info + instructions
+    label = Label(root, text=info_text, justify=LEFT, padx=10, pady=10)
+    label.pack()
+
+    # ASCII Art or simple graphic representation
+    ascii_art = """
+    +--------------------------------+
+    |                                |
+    |      [B&R TraceAnalyzer]       |
+    |                                |
+    +--------------------------------+
+    """
+    graphic_label = Label(root, text=ascii_art, font=('Courier', 10))
+    graphic_label.pack()
 
     frame = Frame(root)
     frame.pack(fill='both', expand=True)
@@ -255,4 +267,5 @@ def gui():
     root.mainloop()
 
 if __name__ == "__main__":
+    print("Welcome to Trace Analyzer Version 1.0")
     gui()
