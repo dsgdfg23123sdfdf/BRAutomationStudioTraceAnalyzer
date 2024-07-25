@@ -93,6 +93,7 @@ def export_data(combined_data, start, end, filepath, header_lines):
 def plot_data(time_data, value_data, variable_names, selections, scales, offsets, header_lines):
     fig, ax = plt.subplots(figsize=(10, 5))
     lines = []
+    selected_variable_names = []  # Liste für die Namen der ausgewählten Variablen
 
     # Plotting each selected data series
     for i, (selected, scale, offset) in enumerate(zip(selections, scales, offsets)):
@@ -100,11 +101,16 @@ def plot_data(time_data, value_data, variable_names, selections, scales, offsets
             scaled_data = value_data.iloc[:, i] * float(scale.get()) + float(offset.get())
             line, = ax.plot(time_data.iloc[:, i], scaled_data, label=variable_names[i])
             lines.append(line)
+            selected_variable_names.append(variable_names[i])
 
     ax.set_xlabel('Time')
     ax.set_ylabel('Value')
     ax.set_title('Data Plot')
+    ax.legend()
     ax.grid(True)
+
+
+
 
     # Cursors initialization
     cursor1 = ax.axvline(x=time_data.iloc[0, 0], color='r', linestyle='--')
@@ -126,7 +132,7 @@ def plot_data(time_data, value_data, variable_names, selections, scales, offsets
 
 
         update_time_difference(cursor1, cursor2, ax)
-        update_legend(lines, ax, cursor_values, cursor1, cursor2, variable_names)
+        update_legend(lines, ax, cursor_values, cursor1, cursor2, selected_variable_names)
         fig.canvas.draw()
 
     fig.canvas.mpl_connect('button_press_event', on_click)
@@ -142,11 +148,11 @@ def update_cursor_values(cursor, lines, ax, cursor_values):
         y_value = y_data[nearest_index]
         cursor_values[cursor][i] = f'{y_value:.2f}'
 
-def update_legend(lines, ax, cursor_values, cursor1, cursor2, variable_names):
+def update_legend(lines, ax, cursor_values, cursor1, cursor2, selected_variable_names):
     for i, line in enumerate(lines):
         value1 = cursor_values[cursor1].get(i, 'N/A')
         value2 = cursor_values[cursor2].get(i, 'N/A')
-        line.set_label(f'{variable_names[i]}: {value1} | {value2}')
+        line.set_label(f'{selected_variable_names[i]}: {value1} | {value2}')
     ax.legend()
 
 def update_time_difference(cursor1, cursor2, ax):
