@@ -24,7 +24,7 @@ except ImportError:
     import matplotlib.pyplot as plt
 
 import tkinter as tk
-from tkinter import Tk, Checkbutton, Button, Entry, Label, IntVar, Frame, Scrollbar, VERTICAL, filedialog, LEFT
+from tkinter import Tk, Checkbutton, Button, Entry, Label, IntVar, Frame, Scrollbar, VERTICAL, filedialog, LEFT, StringVar
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
 try:
@@ -106,9 +106,11 @@ def export_data(combined_data, start, end, filepath, header_lines):
                 line += f"{row[time_col]},{row[value_col]},"
             file.write(line.rstrip(',') + '\n')
 
-def plot_data(time_data, value_data, variable_names, selections, scales, offsets, header_lines, fig, ax,root, initial=False):
+def plot_data(time_data, value_data, variable_names, selections, scales, offsets, colors, header_lines, fig, ax, initial=False):
     print("Debug: Plotting data...")
 
+    for color_var in colors:
+        print(f"Debug: Current color value: {color_var.get()}")
 
     global connection_id
 
@@ -121,11 +123,11 @@ def plot_data(time_data, value_data, variable_names, selections, scales, offsets
     visible_time_data = pd.DataFrame()
     visible_value_data = pd.DataFrame()
 
-    for i, (selected, scale, offset) in enumerate(zip(selections, scales, offsets)):
+    for i, (selected, scale, offset, color_var) in enumerate(zip(selections, scales, offsets, colors)):
         if selected.get():
             print(f"Debug: Plotting variable {variable_names[i]}")
             scaled_data = value_data.iloc[:, i] * float(scale.get()) + float(offset.get())
-            line, = ax.plot(time_data.iloc[:, i], scaled_data, label=variable_names[i])
+            line, = ax.plot(time_data.iloc[:, i], scaled_data, label=variable_names[i], color = color_var.get())
             lines.append(line)
             visible_time_data = pd.concat([visible_time_data, time_data.iloc[:, i]], axis=1)
             visible_value_data = pd.concat([visible_value_data, scaled_data], axis=1)
@@ -235,13 +237,14 @@ def gui():
     selections = []
     scale_entries = []
     offset_entries = []
+    color_entries = []
     variable_names = []
     time_data = pd.DataFrame()
     value_data = pd.DataFrame()
     header_lines = []
 
     def on_change(event=None):
-        plot_data(time_data, value_data, variable_names, selections, scale_entries, offset_entries, header_lines, fig, ax, root, initial=False)
+        plot_data(time_data, value_data, variable_names, selections, scale_entries, offset_entries, color_entries, header_lines, fig, ax, initial=False)
 
     def on_change_wrapper():
         on_change()  # Calls on_change without arguments
@@ -253,16 +256,23 @@ def gui():
             time_data, value_data, variable_names, header_lines = read_target_data(filepath)
 
             # Remove old GUI elements
-            #for widget in frame.winfo_children():
-                #widget.destroy()
+            for widget in frame.winfo_children():
+                if isinstance(widget, Frame):
+                    widget.destroy()
 
             # Re-create GUI elements for the variables
             selections = []
             scale_entries = []
             offset_entries = []
+
+            color_options = ['blue', 'green', 'red', 'cyan', 'magenta', 'yellow', 'black', 'white']
+            color_index = 0
+
             for name in variable_names:
+
                 var_frame = Frame(frame)
                 var_frame.pack(fill='x')
+
 
                 selected = IntVar(value=1)
                 chk = Checkbutton(var_frame, text=name, variable=selected, command=on_change_wrapper)
@@ -284,11 +294,23 @@ def gui():
                 offset_entry.pack(side='left')
                 offset_entry.bind('<Return>', on_change)
 
+                #color_label = Label(var_frame, text="Color:")
+                #color_label.pack(side='left')
+
+                color_var = StringVar(value=color_options[color_index % len(color_options)])  # Default color
+                color_menu = tk.OptionMenu(var_frame, color_var, *color_options)
+                color_menu.pack(side='left')
+
+                color_var.trace_add('write', lambda *args: on_change()) # Update plot when color changes
+
                 selections.append(selected)
                 scale_entries.append(scale_entry)
                 offset_entries.append(offset_entry)
+                color_entries.append(color_var)
 
-            plot_data(time_data, value_data, variable_names, selections, scale_entries, offset_entries, header_lines, fig, ax, root, initial=True)
+                color_index += 1
+
+            plot_data(time_data, value_data, variable_names, selections, scale_entries, offset_entries,color_entries, header_lines, fig, ax, initial=True)
 
     # Button to load a new file
     load_button = Button(root, text="Load Data", command=load_and_plot_data)
