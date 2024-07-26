@@ -197,16 +197,17 @@ def update_cursor_values(cursor, lines, ax, cursor_values):
 
 def update_legend(lines, ax, cursor_values, cursor1, cursor2, variable_names, selections):
     print("-------Debug update_legened called------")
+    line_labels = [line.get_label() for line in lines]
     # Update the legend to display only selected variables
     new_labels = []
 
     for i, line in enumerate(lines):
         value1 = cursor_values[cursor1].get(i, 'N/A')
         value2 = cursor_values[cursor2].get(i, 'N/A')
-        new_label = f'{line}: {value1} | {value2}'
+        new_label = f'{line_labels[i]}: {value1} | {value2}'
         new_labels.append(new_label)
 
-    ax.legend(lines, new_labels)  # Set the new legend with the updated labels
+    ax.legend(new_labels)  # Set the new legend with the updated labels
 
 def update_time_difference(cursor1, cursor2, ax):
     x1 = cursor1.get_xdata()[0]
