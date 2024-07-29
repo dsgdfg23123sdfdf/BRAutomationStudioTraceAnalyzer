@@ -10,3 +10,4 @@ This application is designed for analyzing trace data saved in Automation Studio
 -Data Export: Select a specific range of data to be exported back into a B&R-compatible trace chart data CSV file.
 
 -Cursor Measurement: Users can set cursors to measure time and values using left + Ctrl, or right mouse click to set cursor 1 and 2.
+![grafik](https://github.com/user-attachments/assets/bcaedce1-921d-44a7-8e67-9a29299def28)
